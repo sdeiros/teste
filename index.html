@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="pt">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notification with Google Sheets</title>
+    <script src="https://cdn.onesignal.com/sdks/OneSignalSDK.js" async></script>
+</head>
+
+<body>
+    <h1>Notificação de Avisos</h1>
+    <div id="notification-content">
+        <!-- Todas as notificações serão exibidas aqui -->
+    </div>
+
+    <script>
+        let notificationsSent = []; // Armazena notificações enviadas para evitar duplicação
+        let lastCheckedData = []; // Armazena os dados da planilha da última verificação
+
+        // Configuração do OneSignal
+        window.OneSignal = window.OneSignal || [];
+        OneSignal.push(function () {
+            OneSignal.push(function () {
+                OneSignal.init({
+                    appId: "d97a73b2-4980-4199-abf1-695910d74e52", // Seu appId do OneSignal
+                    notifyButton: { enable: true },
+                });
+
+                OneSignal.on('subscriptionChange', function (isSubscribed) {
+                    if (isSubscribed) {
+                        OneSignal.push(function () {
+                            // Inscreve o usuário no tópico de notificações
+                            OneSignal.sendTag("notificacoes", "true");
+                        });
+                    }
+                });
+            });
+
+            console.log("OneSignal initialized.");
+
+            // Verificação periódica da planilha
+            setInterval(fetchGoogleSheetData, 5000); // Checa atualizações a cada 5 segundos
+        });
+
+        // Função para buscar dados da planilha
+        async function fetchGoogleSheetData() {
+            console.log("Fetching Google Sheets data...");
+            try {
+                const response = await fetch("https://sheets.googleapis.com/v4/spreadsheets/1PIhLjXNYtbikhyCQCgSff_DL3b0w9L7n9EtRwGUBG-M/values/Avisos!A:B?key=AIzaSyBA9ar3yt4yUbSVIE9ubrQ5sQuPuz2iWmA");
+
+                if (!response.ok) throw new Error("Erro ao acessar a API do Google Sheets.");
+
+                const data = await response.json();
+                console.log("Dados da planilha:", data);
+
+                if (data && data.values && data.values.length > 1) {
+                    let newNotifications = [];
+
+                    // Verifica cada item na planilha para ver se é uma notificação nova
+                    for (let i = 1; i < data.values.length; i++) {
+                        const tituloNotificacao = data.values[i][0];
+                        const corpoNotificacao = data.values[i][1];
+                        const notificationData = { tituloNotificacao, corpoNotificacao };
+
+                        const notificationExists = notificationsSent.some(
+                            sentNotification => sentNotification.tituloNotificacao === notificationData.tituloNotificacao &&
+                                sentNotification.corpoNotificacao === notificationData.corpoNotificacao
+                        );
+                        if (!notificationExists) {
+                            notificationsSent.push(notificationData);
+                            newNotifications.push(notificationData);
+
+                            // Exibe a notificação no HTML
+                            document.getElementById("notification-content").innerHTML += `
+                                <div>
+                                    <h2>${tituloNotificacao}</h2>
+                                    <p>${corpoNotificacao}</p>
+                                </div>
+                            `;
+                            console.log("Nova notificação exibida:", notificationData);
+                        }
+                    }
+
+                    // Envia notificações apenas para os novos itens detectados
+                    if (newNotifications.length > 0) {
+                        newNotifications.forEach(notification => {
+                            // Verifica se a guia está ativa ou inativa
+                            if (document.visibilityState === 'hidden') {
+                                console.log("Notificação enviada por guia inativa");
+                            }
+
+                            OneSignal.push(function () {
+                                OneSignal.sendSelfNotification(
+                                    notification.tituloNotificacao, // Título da notificação
+                                    notification.corpoNotificacao   // Corpo da notificação
+                                );
+                                console.log("Notificação push enviada:", notification);
+                            });
+                        });
+                    }
+
+                    // Atualiza `lastCheckedData` para o novo estado da planilha
+                    lastCheckedData = data.values;
+                } else {
+                    document.getElementById("notification-content").innerText = "Nenhum aviso disponível.";
+                    console.log("Planilha vazia ou sem dados adicionais.");
+                }
+            } catch (error) {
+                console.error("Erro ao buscar dados da planilha:", error);
+                document.getElementById("notification-content").innerText = "Erro ao carregar dados da planilha.";
+            }
+        }
+    </script>
+</body>
+
+</html>
